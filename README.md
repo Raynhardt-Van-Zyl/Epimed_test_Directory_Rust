@@ -10,6 +10,7 @@ EpiMed Device is an embedded Rust project targeting the nRF52840 microcontroller
 This project leverages the power of Rust's safety guarantees and the Embassy framework's asynchronous runtime to create a reliable and efficient embedded application for medical device monitoring. The primary features include:
 
 - **BLE Connectivity**: Implements BLE services for battery level monitoring and distance measurement.
+- **Low Power State Monitoring**: Notifies when the device enters a low power state to ensure power efficiency.
 - **Asynchronous Runtime**: Uses Embassy's executor for efficient task management on the nRF52840.
 - **Custom Hardware Integration**: Tailored for the nRF52840-DK development kit with specific memory configurations.
 

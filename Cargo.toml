@@ -43,3 +43,10 @@ heapless = "0.8.0"
 atomic-pool = "1.0.1"
 static_cell = "2.0.0"
 nrf-softdevice-s140 = { path = "library/nrf-softdevice/nrf-softdevice-s140", optional = true }
+
+[[bin]]
+
+name    = "Epimed_Device"
+path    = "src/main.rs"
+test    = false      # Don’t build libtest harness
+bench   = false      # Optional: skip benches too
