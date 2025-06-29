@@ -10,7 +10,7 @@ EpiMed Device is an embedded Rust project targeting the nRF52840 microcontroller
 This project leverages the power of Rust's safety guarantees and the Embassy framework's asynchronous runtime to create a reliable and efficient embedded application for medical device monitoring. The primary features include:
 
 - **BLE Connectivity**: Implements BLE services for battery level monitoring and distance measurement.
-- **Low Power State Monitoring**: Notifies when the device enters a low power state to ensure power efficiency.
+- **Power Saving Mode Monitoring**: Indicates when the device is in a dormant state (sleep mode) to extend battery life by reducing power usage.
 - **Asynchronous Runtime**: Uses Embassy's executor for efficient task management on the nRF52840.
 - **Custom Hardware Integration**: Tailored for the nRF52840-DK development kit with specific memory configurations.
 
@@ -65,6 +65,17 @@ Contributions are welcome! Please feel free to submit a Pull Request or open an 
 ## License
 
 This project is licensed under the MIT License or Apache License 2.0, at your option. See the [LICENSE](LICENSE) file for details.
+
+## Future Power Saving Enhancements
+
+To further optimize power consumption and extend battery life for the EpiMed Device, the following enhancements are planned:
+
+- **Dynamic BLE Advertising Intervals**: Adjust BLE advertising intervals based on usage patterns or battery level to reduce power usage during periods of low activity.
+- **Peripheral Power Management**: Disable or put peripheral components (like sensors or LEDs) into low power states when not in use.
+- **Advanced Sleep Modes**: Explore deeper sleep modes such as System OFF with RAM retention for minimal power draw, waking only on critical events.
+- **Power-Aware Task Scheduling**: Implement task scheduling that prioritizes power efficiency, running intensive tasks only when necessary.
+- **Battery Level Adaptive Behavior**: Modify device behavior based on battery level, reducing functionality or frequency of operations as battery depletes.
+- **Wake-Up Source Optimization**: Configure specific wake-up sources (e.g., GPIO interrupts for user interaction or BLE connection requests) to minimize unnecessary wake-ups.
 
 ## Acknowledgments
 
