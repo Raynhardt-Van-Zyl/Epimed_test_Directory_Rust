@@ -1,0 +1,40 @@
+# Rust build artifacts
+/target/
+/Cargo.lock
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files created by build tools
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Rust-specific temporary files
+*.rs.bk
+
+# Ignore submodules' build artifacts (if they have their own build directories)
+library/embassy/target/
+library/nrf-softdevice/target/
+
+# Ignore any local configuration overrides
+.cargo/config
+.cargo/credentials
+
+# Ignore documentation generated files
+/docs/book/
+/docs/html/
+
+# Ignore any test or example build outputs
+/examples/target/
+/tests/target/

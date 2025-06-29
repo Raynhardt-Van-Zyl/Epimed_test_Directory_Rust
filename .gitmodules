@@ -1,0 +1,12 @@
+[submodule "embassy"]
+	path = library/embassy
+	url = https://github.com/embassy-rs/embassy.git
+[submodule "nrf-softdevice"]
+	path = library/nrf-softdevice
+	url = https://github.com/embassy-rs/nrf-softdevice.git
+[submodule "library/embassy"]
+	path = library/embassy
+	url = https://github.com/embassy-rs/embassy.git
+[submodule "library/nrf-softdevice"]
+	path = library/nrf-softdevice
+	url = https://github.com/embassy-rs/nrf-softdevice.git

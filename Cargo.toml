@@ -1,0 +1,45 @@
+[package]
+name = "Epimed_Device"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = [
+    "ble-l2cap",
+    "ble-gatt-server",
+    "ble-gatt-client",
+    "ble-sec",
+]
+
+ble-l2cap = ["nrf-softdevice/ble-l2cap"]
+ble-gatt-server = ["nrf-softdevice/ble-gatt-server"]
+ble-gatt-client = ["nrf-softdevice/ble-gatt-client"]
+ble-sec = ["nrf-softdevice/ble-sec"]
+
+nrf52840 = [
+  "embassy-nrf/nrf52840",
+  "nrf-softdevice/nrf52840",
+  "nrf-softdevice/s140",
+  "dep:nrf-softdevice-s140"
+]
+
+nrf52840-dk = ["nrf52840"]
+
+
+[dependencies]
+embassy-executor = { path = "library/embassy/embassy-executor", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"]}
+embassy-time = { path = "library/embassy/embassy-time", features = ["defmt", "defmt-timestamp-uptime"]}
+embassy-sync = { path = "library/embassy/embassy-sync" }
+embassy-nrf = { path = "library/embassy/embassy-nrf", features = ["defmt", "gpiote", "time-driver-rtc1", "nrf52840"] }
+cortex-m-rt = "0.7.3"
+defmt = "1"
+defmt-rtt = "1"
+panic-probe = { version = "1", features= ["print-defmt"] }
+nrf-softdevice = { path = "library/nrf-softdevice/nrf-softdevice", features = ["defmt", "ble-peripheral", "ble-central", "critical-section-impl", "nrf52840", "s140"] }
+embedded-storage = "0.3.1"
+embedded-storage-async = "0.4.1"
+futures = { version = "0.3.29", default-features = false }
+heapless = "0.8.0"
+atomic-pool = "1.0.1"
+static_cell = "2.0.0"
+nrf-softdevice-s140 = { path = "library/nrf-softdevice/nrf-softdevice-s140", optional = true }
