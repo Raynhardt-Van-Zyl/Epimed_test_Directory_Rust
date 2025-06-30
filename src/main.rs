@@ -87,7 +87,8 @@ async fn bluetooth_task(sd: &'static Softdevice, server: Server) {
     static SCAN_DATA: LegacyAdvertisementPayload = LegacyAdvertisementBuilder::new().full_name("EpiMed Device").build();
 
     let mut config = peripheral::Config::default();
-    config.interval = 32; // in units of 0.625ms
+    config.interval = 160; // in units of 0.625ms, set to 100ms for lower power consumption
+    config.tx_power = nrf_softdevice::ble::TxPower::Minus8dBm; // Lower TX power to reduce power usage
 
     let adv = peripheral::ConnectableAdvertisement::ScannableUndirected {
         adv_data: &ADV_DATA,
@@ -176,12 +177,10 @@ async fn power_saving_task(server: &Server, conn: &Connection, _sd: &'static Sof
             if let Err(e) = server.bas.power_saving_mode_notify(conn, &power_saving_mode) {
                 info!("Failed to notify power saving mode: {:?}", e);
             }
-            // Enter System ON low power mode (can be woken by BLE events or other interrupts)
-            unsafe {
-                nrf_softdevice::raw::sd_power_system_off();
-            }
-            // Note: The above call may not return if the system fully powers down.
-            // In a real implementation, configure wake-up sources before this call.
+            // Enter System OFF mode, the deepest low-power state (can be woken by configured wake-up sources)
+            embassy_nrf::power::set_system_off();
+            // Note: This call may not return if the system fully powers down.
+            // Wake-up sources should be configured before entering this state.
         }
 
         // If woken up (e.g., by BLE connection or other interrupt), update state
@@ -218,15 +217,21 @@ async fn main(spawner: Spawner) {
     let mut config = embassy_nrf::config::Config::default();
     config.gpiote_interrupt_priority = interrupt::Priority::P2;
     config.time_interrupt_priority = interrupt::Priority::P2;
+    // Enable DCDC Regulators for improved power efficiency
+    config.dcdc = embassy_nrf::config::DcdcConfig {
+        reg0: true, // Enable first stage DCDC (VDDH -> VDD)
+        reg1: true, // Enable second stage DCDC (VDD -> DEC4)
+        reg0_voltage: None, // Do not change the voltage setting
+    };
     let p = embassy_nrf::init(config);
 
     // Configure SoftDevice with proper settings for EpiMed
     let config = nrf_softdevice::Config {
         clock: Some(raw::nrf_clock_lf_cfg_t {
-            source: raw::NRF_CLOCK_LF_SRC_RC as u8,
-            rc_ctiv: 16,
-            rc_temp_ctiv: 2,
-            accuracy: raw::NRF_CLOCK_LF_ACCURACY_500_PPM as u8,
+            source: raw::NRF_CLOCK_LF_SRC_XTAL as u8,
+            rc_ctiv: 0, // Not used with XTAL, set to 0
+            rc_temp_ctiv: 0, // Not used with XTAL, set to 0
+            accuracy: raw::NRF_CLOCK_LF_ACCURACY_20_PPM as u8, // Higher accuracy with external crystal
         }),
         conn_gap: Some(raw::ble_gap_conn_cfg_t {
             conn_count: 6,
@@ -254,6 +259,19 @@ async fn main(spawner: Spawner) {
     };
 
     let sd = Softdevice::enable(&config);
+    // Set preferred peripheral connection parameters for lower power consumption
+    let conn_params = raw::ble_gap_conn_params_t {
+        min_conn_interval: 80, // 100ms (longer interval to sleep more)
+        max_conn_interval: 160, // 200ms
+        slave_latency: 4, // Higher latency to skip connection events
+        conn_sup_timeout: 400, // 4 seconds supervision timeout
+    };
+    let ret = unsafe { raw::sd_ble_gap_ppcp_set(&conn_params) };
+    if ret != 0 {
+        info!("Failed to set preferred connection parameters: {}", ret);
+    } else {
+        info!("Preferred connection parameters set for lower power consumption");
+    }
     let server = unwrap!(Server::new(sd));
     unwrap!(spawner.spawn(softdevice_task(sd)));
 
