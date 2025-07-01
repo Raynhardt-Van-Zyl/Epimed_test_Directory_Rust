@@ -196,7 +196,15 @@ To further optimize power consumption and extend battery life for the EpiMed Dev
 
 ## VL53L4CD Rust Driver (`vl53l4cd.rs`)
 
-This section outlines the plan for porting the VL53L4CD C++ library to a Rust driver (`vl53l4cd.rs`). The new driver will be integrated into the `src/main.rs` application and will provide a safe and idiomatic Rust interface for the sensor.
+This section outlines the plan for porting the [STM32duino VL53L4CD](https://github.com/stm32duino/VL53L4CD) C++ library to a Rust driver (`vl53l4cd.rs`). The new driver will be integrated into the `src/main.rs` application and will provide a safe and idiomatic Rust interface for the sensor.
+
+### Source C++ Library Details
+
+The Rust driver is a port of the official STMicroelectronics VL53L4CD library for Arduino. The original C++ driver is included under `library/VL53L4CD` for reference. Key details of the source library are:
+- **Name**: `STM32duino VL53L4CD`
+- **Version**: `1.0.5` (from `library.properties`)
+- **Repository**: [https://github.com/stm32duino/VL53L4CD](https://github.com/stm32duino/VL53L4CD)
+- **License**: 3-Clause BSD License (see `library/VL53L4CD/LICENSE.md`)
 
 ### Key Components to Port
 
