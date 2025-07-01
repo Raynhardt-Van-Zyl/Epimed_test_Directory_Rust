@@ -2,6 +2,8 @@
 #![no_main]
 #![macro_use]
 
+mod vl53l4cd;
+
 use defmt_rtt as _; // global logger
 use embassy_nrf as _; // time driver
 use panic_probe as _;
@@ -11,10 +13,16 @@ use core::mem;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_nrf::gpio::{Level, Output, OutputDrive};
-use embassy_nrf::interrupt;
+use embassy_nrf::{bind_interrupts, twim};
+use static_cell::StaticCell;
 use embassy_time::{Duration, Timer};
 use nrf_softdevice::ble::{gatt_server, peripheral, Connection};
 use nrf_softdevice::{raw, Softdevice};
+use vl53l4cd::{Vl53l4cd, DEFAULT_ADDRESS};
+
+bind_interrupts!(struct Irqs {
+    TWISPI0 => twim::InterruptHandler<embassy_nrf::peripherals::TWISPI0>;
+});
 
 #[embassy_executor::task]
 async fn softdevice_task(sd: &'static Softdevice) -> ! {
@@ -38,7 +46,7 @@ struct BatteryService {
 #[nrf_softdevice::gatt_service(uuid = "9e7312e0-2354-11eb-9f10-fbc30a62cf38")]
 struct DistanceService {
     #[characteristic(uuid = "9e7312e1-2354-11eb-9f10-fbc30a62cf38", read, notify)]
-    distance: f32,
+    distance: u16,
 }
 
 // GATT Server definition for EpiMed device
@@ -49,33 +57,12 @@ struct Server {
 }
 
 // Task for distance measurement updates
-async fn distance_update_task(server: &Server, conn: &Connection) {
-    let mut distance: f32 = 0.0;
-    let mut update_interval = embassy_time::Ticker::every(Duration::from_millis(1000));
-
-    loop {
-        update_interval.next().await;
-
-        // Update distance value
-        if distance < 100.0 {
-            distance += 0.5;
-            if distance > 100.0 {
-                distance = 100.0;
-            }
-            info!("Updating distance to: {}", distance);
-            if let Err(e) = server.dist.distance_set(&distance) {
-                info!("Failed to set distance: {:?}", e);
-            }
-            if let Err(e) = server.dist.distance_notify(conn, &distance) {
-                info!("Failed to notify distance: {:?}", e);
-            }
-        }
-    }
-}
-
-// Task for Bluetooth advertisement
 #[embassy_executor::task]
-async fn bluetooth_task(sd: &'static Softdevice, server: Server) {
+async fn bluetooth_task(
+    sd: &'static Softdevice,
+    server: &'static Server,
+    mut sensor: Vl53l4cd<'static, embassy_nrf::peripherals::TWISPI0>,
+) {
     info!("Bluetooth task started");
     // Set up BLE advertisement
     static ADV_DATA: LegacyAdvertisementPayload = LegacyAdvertisementBuilder::new()
@@ -95,14 +82,54 @@ async fn bluetooth_task(sd: &'static Softdevice, server: Server) {
         scan_data: &SCAN_DATA,
     };
 
+    if let Err(e) = sensor.init(None).await {
+        error!("Failed to initialize VL53L4CD sensor: {:?}", e);
+        return;
+    }
+    info!("VL53L4CD sensor initialized");
+
     loop {
         info!("Starting advertisement in bluetooth task...");
         // Start advertising in connectable mode
         let conn = unwrap!(peripheral::advertise_connectable(sd, adv, &config).await);
         info!("Advertisement started, connection established");
 
+        let distance_fut = async {
+            info!("Distance task started");
+            if let Err(e) = sensor.start_ranging().await {
+                error!("Failed to start ranging: {:?}", e);
+                return;
+            }
+            info!("VL53L4CD ranging started");
+
+            let mut ticker = embassy_time::Ticker::every(Duration::from_millis(100));
+            loop {
+                ticker.next().await;
+                if let Ok(true) = sensor.is_data_ready().await {
+                    match sensor.get_result().await {
+                        Ok(result) => {
+                            info!("Distance: {} mm, Status: {}", result.distance_mm, result.range_status);
+                            if let Err(e) = server.dist.distance_set(&result.distance_mm) {
+                                info!("Failed to set distance: {:?}", e);
+                            }
+                            if let Err(e) = server.dist.distance_notify(&conn, &result.distance_mm) {
+                                info!("Failed to notify distance: {:?}", e);
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to get result: {:?}", e);
+                        }
+                    }
+                    if let Err(e) = sensor.clear_interrupt().await {
+                        error!("Failed to clear interrupt: {:?}", e);
+                    }
+                }
+            }
+        };
+
+
         // Create futures for GATT server and other updates
-        let gatt_fut = gatt_server::run(&conn, &server, |e| match e {
+        let gatt_fut = gatt_server::run(&conn, server, |e| match e {
             ServerEvent::Bas(event) => match event {
                 BatteryServiceEvent::BatteryLevelCccdWrite { notifications } => {
                     info!("Battery level notifications: {}", notifications);
@@ -118,21 +145,13 @@ async fn bluetooth_task(sd: &'static Softdevice, server: Server) {
             },
         });
 
-        let distance_fut = distance_update_task(&server, &conn);
-        let power_fut = power_saving_task(&server, &conn, sd);
+        let power_fut = power_saving_task(server, &conn, sd);
 
-        futures::pin_mut!(gatt_fut);
-        // Note: distance_fut and power_fut are not awaited or pinned here due to limitations
-        // in no_std environment without alloc feature for select_all.
-        // They will not run concurrently as separate tasks in this setup.
-        // For full functionality, a different approach or feature enablement is needed.
-        let _ = distance_fut;
-        let _ = power_fut;
+        futures::pin_mut!(gatt_fut, power_fut, distance_fut);
+        futures::future::select(gatt_fut, futures::future::select(power_fut, distance_fut)).await;
 
-        // Wait for GATT server disconnection
-        let gatt_result = gatt_fut.await;
-        info!("Connection disconnected with result: {:?}", gatt_result);
 
+        info!("Connection disconnected");
         info!("Restarting advertisement due to disconnection...");
     }
 }
@@ -215,8 +234,8 @@ async fn main(spawner: Spawner) {
 
     // Initialize Embassy FIRST with proper interrupt priorities
     let mut config = embassy_nrf::config::Config::default();
-    config.gpiote_interrupt_priority = interrupt::Priority::P2;
-    config.time_interrupt_priority = interrupt::Priority::P2;
+    config.gpiote_interrupt_priority = embassy_nrf::interrupt::Priority::P2;
+    config.time_interrupt_priority = embassy_nrf::interrupt::Priority::P2;
     // Enable DCDC Regulators for improved power efficiency
     config.dcdc = embassy_nrf::config::DcdcConfig {
         reg0: true, // Enable first stage DCDC (VDDH -> VDD)
@@ -259,21 +278,21 @@ async fn main(spawner: Spawner) {
     };
 
     let sd = Softdevice::enable(&config);
-    // Set preferred peripheral connection parameters for lower power consumption
-    let conn_params = raw::ble_gap_conn_params_t {
-        min_conn_interval: 80, // 100ms (longer interval to sleep more)
-        max_conn_interval: 160, // 200ms
-        slave_latency: 4, // Higher latency to skip connection events
-        conn_sup_timeout: 400, // 4 seconds supervision timeout
-    };
-    let ret = unsafe { raw::sd_ble_gap_ppcp_set(&conn_params) };
-    if ret != 0 {
-        info!("Failed to set preferred connection parameters: {}", ret);
-    } else {
-        info!("Preferred connection parameters set for lower power consumption");
-    }
-    let server = unwrap!(Server::new(sd));
+    static SERVER: StaticCell<Server> = StaticCell::new();
+    let server = SERVER.init(unwrap!(Server::new(sd)));
     unwrap!(spawner.spawn(softdevice_task(sd)));
+
+    // Configure I2C
+    let mut i2c_config = twim::Config::default();
+    i2c_config.frequency = twim::Frequency::K100;
+    static mut I2C_BUF: [u8; 32] = [0; 32];
+    let i2c = twim::Twim::new(p.TWISPI0, Irqs, p.P0_05, p.P0_04, i2c_config, unsafe { &mut *(&raw mut I2C_BUF as *mut _) });
+
+    // Configure sensor XSHUT pin
+    let xshut = Output::new(p.P1_12, Level::Low, OutputDrive::Standard);
+
+    // Create sensor instance
+    let sensor = Vl53l4cd::new(i2c, xshut, DEFAULT_ADDRESS);
 
     // Configure GPIO pin for LED (using P0.06 as an example for nRF52840)
     let led = Output::new(p.P0_06, Level::Low, OutputDrive::Standard);
@@ -284,12 +303,6 @@ async fn main(spawner: Spawner) {
     info!("LED task spawned");
 
     // Spawn Bluetooth task for advertisement
-    unwrap!(spawner.spawn(bluetooth_task(sd, server)));
+    unwrap!(spawner.spawn(bluetooth_task(sd, server, sensor)));
     info!("Bluetooth task spawned");
-
-    // Keep the main task running
-    info!("Main task running...");
-    loop {
-        Timer::after(Duration::from_millis(1000)).await;
-    }
 }

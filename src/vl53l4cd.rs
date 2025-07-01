@@ -1,11 +1,12 @@
 //! A Rust driver for the VL53L4CD Time-of-Flight sensor.
-#![no_std]
+
+use defmt::*;
 
 use embassy_nrf::twim::{self, Twim};
-use embassy_nrf::gpio::{AnyPin, Level, Output, OutputDrive};
+use embassy_nrf::gpio::Output;
 use embassy_time::{Duration, Timer};
 
-pub const DEFAULT_ADDRESS: u8 = 0x52;
+pub const DEFAULT_ADDRESS: u8 = 0x29;
 
 /// The error type for the VL53L4CD driver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
@@ -53,62 +54,72 @@ impl<'d, T: twim::Instance> Vl53l4cd<'d, T> {
 
     /// Initializes the sensor. Can optionally set a new I2C address.
     pub async fn init(&mut self, new_address: Option<u8>) -> Result<(), Error> {
+        info!("VL53L4CD: Initializing...");
+        Timer::after(Duration::from_millis(10)).await;
         self.xshut.set_high();
         Timer::after(Duration::from_millis(10)).await;
+        info!("VL53L4CD: XSHUT high");
 
         if let Some(addr) = new_address {
             self.set_i2c_address(addr).await?;
+            info!("VL53L4CD: I2C address set to {}", addr);
         }
 
         let id = self.get_sensor_id().await?;
+        info!("VL53L4CD: Sensor ID: {:#X}", id);
         if id != 0xEBAA {
+            error!("VL53L4CD: Invalid sensor ID");
             return Err(Error::InvalidId);
         }
 
-        // Wait for sensor to boot
-        let mut i = 0;
-        loop {
-            let status = self.read_reg(registers::FIRMWARE_SYSTEM_STATUS).await?;
-            if status == 0x03 { // booted
-                break;
-            }
-            if i >= 1000 {
-                return Err(Error::Timeout);
-            }
-            i += 1;
-            Timer::after(Duration::from_millis(1)).await;
-        }
-
         // Load default configuration
+        info!("VL53L4CD: Loading default configuration...");
         for (i, &val) in DEFAULT_CONFIGURATION.iter().enumerate() {
-            self.write_reg((0x2D + i) as u16, val).await?;
+            self.write_reg((0x2D + i) as u16, val).await.map_err(|e| {
+                error!("VL53L4CD: Failed to write default config at reg {:#X}", 0x2D + i);
+                e
+            })?;
         }
+        info!("VL53L4CD: Default configuration loaded");
 
         // Start VHV
-        self.write_reg(registers::SYSTEM_START, 0x40).await?;
+        info!("VL53L4CD: Starting VHV...");
+        self.write_reg(registers::SYSTEM_START, 0x40).await.map_err(|e| {
+            error!("VL53L4CD: Failed to start VHV");
+            e
+        })?;
+        info!("VL53L4CD: VHV started");
 
         // Wait for data ready
+        info!("VL53L4CD: Waiting for data ready...");
         let mut i = 0;
         loop {
             if self.is_data_ready().await? {
                 break;
             }
             if i >= 1000 {
+                error!("VL53L4CD: Timeout waiting for data ready");
                 return Err(Error::Timeout);
             }
             i += 1;
             Timer::after(Duration::from_millis(1)).await;
         }
+        info!("VL53L4CD: Data ready");
 
         self.clear_interrupt().await?;
+        info!("VL53L4CD: Interrupt cleared");
         self.stop_ranging().await?;
+        info!("VL53L4CD: Ranging stopped");
 
         self.write_reg(registers::VHV_CONFIG_TIMEOUT_MACROP_LOOP_BOUND, 0x09).await?;
         self.write_reg(0x0B, 0).await?;
         self.write_reg16(0x0024, 0x500).await?;
+        info!("VL53L4CD: VHV config set");
 
         self.set_range_timing(50, 0).await?;
+        info!("VL53L4CD: Range timing set");
 
+        info!("VL53L4CD: Initialization complete");
         Ok(())
     }
 
