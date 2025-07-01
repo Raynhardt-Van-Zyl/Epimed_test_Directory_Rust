@@ -10,3 +10,6 @@
 [submodule "library/nrf-softdevice"]
 	path = library/nrf-softdevice
 	url = https://github.com/embassy-rs/nrf-softdevice.git
+[submodule "library/VL53L4CD"]
+	path = library/VL53L4CD
+	url = https://github.com/stm32duino/VL53L4CD.git

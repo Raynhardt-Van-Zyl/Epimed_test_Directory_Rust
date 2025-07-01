@@ -37,6 +37,17 @@ This project leverages the power of Rust's safety guarantees and the Embassy fra
 - Ultra-low power consumption with multiple power states
 - I2C interface with hardware shutdown control
 
+### Sensor Functionality
+
+Based on the `EpiMed.ino` example, the VL53L4CD Time-of-Flight sensor is integrated into the system with the following functionality:
+
+- **Initialization**: The sensor is initialized on startup using the `begin()` and `InitSensor()` methods, preparing it for distance measurements.
+- **Configuration**: The ranging timing is configured using `VL53L4CD_SetRangeTiming()`, which in the example is set to 200ms. This allows for a balance between measurement frequency and power consumption.
+- **Measurement Control**: The sensor's ranging can be started and stopped using the `VL53L4CD_StartRanging()` and `VL53L4CD_Off()` methods, respectively. This allows for on-demand measurements, which is crucial for power-saving.
+- **Data Acquisition**: Distance readings are obtained by calling the `VL53L4CD_GetResult()` method, which returns the distance in millimeters.
+- **Interrupts**: The system clears sensor interrupts using `VL53L4CD_ClearInterrupt()`, which is important for ensuring that new measurements can be taken.
+- **Power Management**: The sensor's hardware shutdown pin (`XSHUT_PIN`) is used to completely power off the sensor, reducing power consumption to a minimum when not in use.
+
 ### Battery: 110mAh Li-ion
 - Nominal voltage: 3.7V
 - Operating range: 3.0V - 4.2V
@@ -182,6 +193,34 @@ To further optimize power consumption and extend battery life for the EpiMed Dev
 - **User Interaction Learning**: Adaptive measurement scheduling based on learned user interaction patterns
 - **Emergency Power Reserves**: Reserved battery capacity management for critical medical device functions
 - **Wireless Power Transfer Ready**: Hardware preparation for future wireless charging capabilities
+
+## VL53L4CD Rust Driver (`vl53l4cd.rs`)
+
+This section outlines the plan for porting the VL53L4CD C++ library to a Rust driver (`vl53l4cd.rs`). The new driver will be integrated into the `src/main.rs` application and will provide a safe and idiomatic Rust interface for the sensor.
+
+### Key Components to Port
+
+The following components from the C++ library will be ported to Rust:
+
+- **Structs and Enums**: All necessary data structures, such as `VL53L4CD_Result_t` and error enums, will be redefined in Rust to ensure type safety and clarity.
+- **Core Functions**: The essential functions for sensor interaction will be ported, including:
+    - `VL53L4CD_SensorInit()`: Initializes the sensor.
+    - `VL53L4CD_StartRanging()`: Begins a ranging session.
+    - `VL53L4CD_StopRanging()`: Halts the ranging session.
+    - `VL53L4CD_CheckForDataReady()`: Checks if new data is available.
+    - `VL53L4CD_GetResult()`: Retrieves the measurement results.
+    - `VL53L4CD_ClearInterrupt()`: Clears the sensor's interrupt flag.
+- **I2C Communication**: The platform-specific I2C functions (`VL53L4CD_I2CRead`, `VL53L4CD_I2CWrite`, etc.) will be re-implemented using the `embassy-nrf/i2c` module to ensure compatibility with the nRF52840.
+
+### Implementation Plan
+
+1.  **Create `vl53l4cd.rs`**: A new file will be created in the `src` directory to house the Rust driver.
+2.  **Define Data Structures**: All C++ structs and enums will be translated into their Rust equivalents.
+3.  **Implement the `VL53L4CD` Struct**: A `VL53L4CD` struct will be created to manage the sensor's state and provide a clean interface for the driver's functions.
+4.  **Port Core Functions**: Each of the core C++ functions will be ported to Rust, ensuring that they are both safe and idiomatic.
+5.  **Integrate with `main.rs`**: The new driver will be integrated into the main application, replacing the existing placeholder logic.
+
+By following this plan, we will create a robust and reliable Rust driver for the VL53L4CD sensor, enabling us to fully leverage its capabilities in the EpiMed device.
 
 ## Contributing
 
